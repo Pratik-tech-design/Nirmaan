@@ -14,7 +14,7 @@ export const Reports = () => {
 
   const handleExport = () => {
     if (!payments || !labour || !sites) return;
-    exportToExcel(payments, labour, sites, { totalPayments: payments.length, siteExpenses: {} });
+    exportToExcel(payments, labour, sites, 'NIRMAAN_INDUSTRIAL');
   };
 
   return (

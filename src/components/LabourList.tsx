@@ -1,28 +1,57 @@
-import React, { useState, useEffect } from 'react';
-import { db, auth } from '../lib/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
+import React, { useState } from 'react';
+import { db } from '../lib/firebase';
+import { collection, doc, deleteDoc, updateDoc, query, where, getDocs } from 'firebase/firestore';
 import { useCollectionData } from 'react-firebase-hooks/firestore';
 import { useApp } from '../App';
-import { Labour } from '../types';
-import { Search, Filter, Plus, Phone, MapPin, ChevronRight, MoreHorizontal, Users, ShieldAlert } from 'lucide-react';
-import { cn, formatCurrency } from '../lib/utils';
+import { Search, Filter, Plus, Phone, MapPin, ChevronRight, MoreHorizontal, ShieldAlert, Trash2, Edit } from 'lucide-react';
+import { formatCurrency } from '../lib/utils';
 import { AddLabourModal } from './AddLabourModal';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useToast } from './Toast';
 
 export const LabourList = () => {
   const { t } = useApp();
+  const { showToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [selectedLabour, setSelectedLabour] = useState<any>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
-  const [labour, loading, error] = useCollectionData(collection(db, 'labour'), {
+  const [labour, loading] = useCollectionData(collection(db, 'labour'), {
     idField: 'id',
   } as any);
   const [sites] = useCollectionData(collection(db, 'sites'), { idField: 'id' } as any);
 
-  const filteredLabour = labour?.filter(l => 
+  const activeLabour = labour?.filter(l => l.status !== 'inactive');
+
+  const filteredLabour = activeLabour?.filter(l => 
     l.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     l.phone.includes(searchTerm)
   );
+
+  const handleDelete = async (mode: 'soft' | 'permanent') => {
+    if (!selectedLabour || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      const labourRef = doc(db, 'labour', selectedLabour.id);
+      if (mode === 'soft') {
+        await updateDoc(labourRef, { status: 'inactive' });
+        showToast(t('labourDeletedSuccess'), 'success');
+      } else {
+        await deleteDoc(labourRef);
+        showToast(t('labourDeletedSuccess'), 'success');
+      }
+      setIsDeleteModalOpen(false);
+      setSelectedLabour(null);
+    } catch (error) {
+      console.error(error);
+      showToast('Error deleting labour', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -31,11 +60,14 @@ export const LabourList = () => {
           <h2 className="text-3xl font-black uppercase tracking-tighter text-zinc-900 dark:text-white">{t('labour')}</h2>
           <div className="flex items-center gap-2 mt-2">
             <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-            <p className="text-[10px] text-zinc-400 font-black uppercase tracking-[0.2em]">{labour?.length || 0} TOTAL REGISTERED UNITS</p>
+            <p className="text-[10px] text-zinc-400 font-black uppercase tracking-[0.2em]">{activeLabour?.length || 0} ACTIVE REGISTERED UNITS</p>
           </div>
         </div>
         <button 
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={() => {
+            setSelectedLabour(null);
+            setIsAddModalOpen(true);
+          }}
           className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-5 bg-black dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl hover:scale-105 active:scale-95 transition-all"
         >
           <Plus className="w-4 h-4" strokeWidth={3} />
@@ -61,66 +93,87 @@ export const LabourList = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-20">
         <AnimatePresence mode="popLayout">
-          {filteredLabour?.map((worker: any, idx: number) => (
-            <motion.div 
-              key={worker.id || `worker-${idx}`} 
-              layout
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="group bg-white dark:bg-zinc-900 p-8 rounded-[40px] border-2 border-zinc-100 dark:border-zinc-800 hover:border-zinc-900 dark:hover:border-white transition-all duration-300 shadow-sm hover:shadow-2xl relative overflow-hidden"
-            >
-              <div className="flex justify-between items-start mb-8 relative z-10">
-                <div className="flex gap-4 items-center">
-                  <div className="w-14 h-14 rounded-2xl bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center font-black text-xl text-zinc-300 group-hover:bg-zinc-900 dark:group-hover:bg-white group-hover:text-white dark:group-hover:text-black transition-all">
-                    {worker.name.charAt(0)}
+          {filteredLabour?.map((worker: any, idx: number) => {
+            const assignedSite = sites?.find(s => (worker.assignedSiteIds || []).includes(s.id) || worker.assignedSiteId === s.id);
+            
+            return (
+              <motion.div 
+                key={worker.id || `worker-${idx}`} 
+                layout
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="group bg-white dark:bg-zinc-900 p-8 rounded-[40px] border-2 border-zinc-100 dark:border-zinc-800 hover:border-zinc-900 dark:hover:border-white transition-all duration-300 shadow-sm hover:shadow-2xl relative overflow-hidden"
+              >
+                <div className="flex justify-between items-start mb-8 relative z-10">
+                  <div className="flex gap-4 items-center">
+                    <div className="w-14 h-14 rounded-2xl bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center font-black text-xl text-zinc-300 group-hover:bg-zinc-900 dark:group-hover:bg-white group-hover:text-white dark:group-hover:text-black transition-all">
+                      {worker.name.charAt(0)}
+                    </div>
+                    <div>
+                      <h4 className="font-black text-lg text-zinc-900 dark:text-white uppercase tracking-tighter leading-tight">{worker.name}</h4>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mt-1">{worker.skillType}</p>
+                    </div>
                   </div>
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => {
+                        setSelectedLabour(worker);
+                        setIsAddModalOpen(true);
+                      }}
+                      className="p-2 text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setSelectedLabour(worker);
+                        setIsDeleteModalOpen(true);
+                      }}
+                      className="p-2 text-zinc-300 hover:text-rose-500 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6 mb-8 relative z-10">
+                  <div className="space-y-2">
+                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Contact</p>
+                    <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 font-bold text-[11px] truncate">
+                      <Phone className="w-3 h-3 opacity-40 shrink-0" />
+                      {worker.phone}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Site</p>
+                    <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 font-bold text-[11px] truncate">
+                      <MapPin className="w-3 h-3 opacity-40 shrink-0" />
+                      <span className="truncate">{assignedSite ? assignedSite.siteName : 'UNASSIGNED'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-end pt-6 border-t border-zinc-50 dark:border-zinc-800 relative z-10">
                   <div>
-                    <h4 className="font-black text-lg text-zinc-900 dark:text-white uppercase tracking-tighter leading-tight">{worker.name}</h4>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mt-1">{worker.skillType}</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-1">Daily Wage</p>
+                    <p className="text-2xl font-black text-zinc-900 dark:text-white tracking-tighter">{formatCurrency(worker.dailyWage)}</p>
                   </div>
+                  <button className="w-12 h-12 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border-2 border-transparent flex items-center justify-center text-zinc-900 dark:text-white hover:bg-zinc-900 dark:hover:bg-white hover:text-white dark:hover:text-black transition-all group-hover:shadow-lg active:scale-95">
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
                 </div>
-                <button className="p-2 text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors">
-                  <MoreHorizontal className="w-4 h-4" />
-                </button>
-              </div>
 
-              <div className="grid grid-cols-2 gap-6 mb-8 relative z-10">
-                <div className="space-y-2">
-                  <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Contact</p>
-                  <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 font-bold text-[11px] truncate">
-                    <Phone className="w-3 h-3 opacity-40 shrink-0" />
-                    {worker.phone}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Site</p>
-                  <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 font-bold text-[11px] truncate">
-                    <MapPin className="w-3 h-3 opacity-40 shrink-0" />
-                    {worker.assignedSiteId ? 'ASSIGNED' : 'UNASSIGNED'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-end pt-6 border-t border-zinc-50 dark:border-zinc-800 relative z-10">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-1">Daily Wage</p>
-                  <p className="text-2xl font-black text-zinc-900 dark:text-white tracking-tighter">{formatCurrency(worker.dailyWage)}</p>
-                </div>
-                <button className="w-12 h-12 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border-2 border-transparent flex items-center justify-center text-zinc-900 dark:text-white hover:bg-zinc-900 dark:hover:bg-white hover:text-white dark:hover:text-black transition-all group-hover:shadow-lg active:scale-95">
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Decorative background number */}
-              <span className="absolute -bottom-8 -right-4 font-black text-[120px] text-zinc-500/5 select-none pointer-events-none italic">
-                {worker.name.charAt(0)}
-              </span>
-            </motion.div>
-          ))}
+                {/* Decorative background number */}
+                <span className="absolute -bottom-8 -right-4 font-black text-[120px] text-zinc-500/5 select-none pointer-events-none italic">
+                  {worker.name.charAt(0)}
+                </span>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
 
-        {!loading && filteredLabour?.length === 0 && (
+        {!loading && (filteredLabour?.length === 0 || !filteredLabour) && (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -134,7 +187,10 @@ export const LabourList = () => {
               <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest leading-none opacity-60">System Ready for Personnel Ingestion</p>
             </div>
             <button 
-              onClick={() => setIsAddModalOpen(true)}
+              onClick={() => {
+                setSelectedLabour(null);
+                setIsAddModalOpen(true);
+              }}
               className="px-6 py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black text-[9px] uppercase tracking-widest hover:scale-105 transition-all"
             >
               Provision Now
@@ -145,8 +201,30 @@ export const LabourList = () => {
 
       <AddLabourModal 
         isOpen={isAddModalOpen} 
-        onClose={() => setIsAddModalOpen(false)} 
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setSelectedLabour(null);
+        }} 
         sites={sites || []}
+        editData={selectedLabour}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setSelectedLabour(null);
+        }}
+        onConfirm={handleDelete as any}
+        title={t('deleteLabour')}
+        message={t('confirmDeleteLabour')}
+        warning={t('deleteWarning')}
+        itemType="labour"
+        itemData={selectedLabour ? {
+          name: selectedLabour.name,
+          details: selectedLabour.skillType,
+        } : undefined}
+        loading={isDeleting}
       />
     </div>
   );

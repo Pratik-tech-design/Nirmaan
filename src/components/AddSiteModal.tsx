@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { useApp } from '../App';
 import { X, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './Toast';
 
-export const AddSiteModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
+export const AddSiteModal = ({ isOpen, onClose, editData }: { isOpen: boolean, onClose: () => void, editData?: any }) => {
   const { t } = useApp();
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -16,22 +16,42 @@ export const AddSiteModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: ()
     address: '',
   });
 
+  useEffect(() => {
+    if (editData) {
+      setFormData({
+        siteName: editData.siteName || '',
+        description: editData.description || '',
+        address: editData.address || '',
+      });
+    } else {
+      setFormData({ siteName: '', description: '', address: '' });
+    }
+  }, [editData, isOpen]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
     setLoading(true);
     try {
-      await addDoc(collection(db, 'sites'), {
-        ...formData,
-        status: 'active',
-        createdDate: new Date().toISOString(),
-      });
-      showToast(t('siteCreatedSuccess'), 'success');
+      if (editData?.id) {
+        await updateDoc(doc(db, 'sites', editData.id), {
+          ...formData,
+          updatedAt: new Date().toISOString(),
+        });
+        showToast(t('siteCreatedSuccess'), 'success'); // Reusing translation for simplicity or add siteUpdatedSuccess
+      } else {
+        await addDoc(collection(db, 'sites'), {
+          ...formData,
+          status: 'active',
+          createdDate: new Date().toISOString(),
+        });
+        showToast(t('siteCreatedSuccess'), 'success');
+      }
       onClose();
-      setFormData({ siteName: '', description: '', address: '' });
+      if (!editData) setFormData({ siteName: '', description: '', address: '' });
     } catch (error) {
       console.error(error);
-      showToast('Error creating site', 'error');
+      showToast('Error saving site', 'error');
     } finally {
       setLoading(false);
     }
