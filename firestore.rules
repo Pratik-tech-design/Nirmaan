@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function existing() { return resource.data; }
+    function incoming() { return request.resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    function isAdmin() { 
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'; 
+    }
+
+    // --- Validation Blueprints ---
+    
+    function isValidLabour(data) {
+      return data.keys().hasAll(['name', 'phone', 'dailyWage', 'assignedSiteIds']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.phone is string && data.phone.size() >= 10 &&
+             data.dailyWage is number && data.dailyWage >= 0 &&
+             data.assignedSiteIds is list;
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll(['labourId', 'siteId', 'paymentType', 'amount', 'createdAt', 'createdBy']) &&
+             isValidId(data.labourId) &&
+             isValidId(data.siteId) &&
+             data.paymentType in ['kharchi', 'extra', 'advance', 'bonus', 'deduction'] &&
+             data.amount is number && data.amount > 0 &&
+             data.createdBy == request.auth.uid;
+    }
+
+    // --- Rules ---
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /sites/{siteId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin();
+    }
+
+    match /labour/{labourId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidLabour(incoming());
+      allow update: if isSignedIn() && (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['assignedSiteIds']));
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidPayment(incoming());
+      allow delete: if isAdmin();
+    }
+  }
+}

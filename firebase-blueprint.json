@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "App user (Admin or Site Manager)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "manager"] },
+        "email": { "type": "string", "format": "email" },
+        "activeSiteIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["name", "role", "email"]
+    },
+    "Site": {
+      "title": "Site",
+      "description": "Construction site",
+      "type": "object",
+      "properties": {
+        "siteName": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "createdDate": { "type": "string", "format": "date-time" },
+        "managerId": { "type": "string" },
+        "address": { "type": "string" }
+      },
+      "required": ["siteName", "status", "createdDate"]
+    },
+    "Labour": {
+      "title": "Labour",
+      "description": "Labour worker details",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "emergencyContact": { "type": "string" },
+        "skillType": { "type": "string" },
+        "industryType": { "type": "string" },
+        "dailyWage": { "type": "number" },
+        "joiningDate": { "type": "string", "format": "date-time" },
+        "assignedSiteIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["name", "phone", "dailyWage", "assignedSiteIds"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Labour payment transaction",
+      "type": "object",
+      "properties": {
+        "labourId": { "type": "string" },
+        "siteId": { "type": "string" },
+        "paymentType": { "type": "string", "enum": ["kharchi", "extra", "advance", "bonus", "deduction"] },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["labourId", "siteId", "paymentType", "amount", "createdAt", "createdBy"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/sites/{siteId}": { "schema": "Site", "description": "Site details" },
+    "/labour/{labourId}": { "schema": "Labour", "description": "Labour details" },
+    "/payments/{paymentId}": { "schema": "Payment", "description": "Payment transactions" }
+  }
+}
